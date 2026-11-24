@@ -1,0 +1,101 @@
+"""طبقة قاعدة البيانات. SQLite من مكتبة Python القياسية، وسهلة الانتقال إلى PostgreSQL لاحقاً."""
+import sqlite3
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS customers (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    phone       TEXT UNIQUE NOT NULL,
+    name        TEXT,
+    interest    TEXT NOT NULL DEFAULT 'unknown',   -- unknown | buyer | seller | info
+    notes       TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+    id           TEXT PRIMARY KEY,                 -- معرّف الرسالة من Meta، يمنع التكرار
+    customer_id  INTEGER REFERENCES customers(id),
+    direction    TEXT NOT NULL CHECK (direction IN ('in', 'out')),
+    body         TEXT,
+    kind         TEXT,                             -- offer | interest | other
+    raw          TEXT,
+    created_at   TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS offers (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_customer_id INTEGER REFERENCES customers(id),
+    title             TEXT,
+    category          TEXT,                       -- land | farm | property | commercial
+    price             TEXT,
+    location          TEXT,
+    details           TEXT,
+    status            TEXT NOT NULL DEFAULT 'draft',  -- draft | pending_approval | published | sold
+    efficiency_score  REAL DEFAULT 0,             -- للترتيب لاحقاً
+    availability      TEXT DEFAULT 'available',
+    created_at        TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS customer_offers (
+    customer_id INTEGER REFERENCES customers(id),
+    offer_id    INTEGER REFERENCES offers(id),
+    relation    TEXT NOT NULL DEFAULT 'interested', -- interested | owner
+    PRIMARY KEY (customer_id, offer_id, relation)
+);
+"""
+
+
+def connect(path: str) -> sqlite3.Connection:
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+def init_db(conn: sqlite3.Connection) -> None:
+    conn.executescript(SCHEMA)
+    conn.commit()
+
+
+def upsert_customer(conn: sqlite3.Connection, phone: str, name: str | None) -> int:
+    conn.execute(
+        """
+        INSERT INTO customers (phone, name) VALUES (?, ?)
+        ON CONFLICT(phone) DO UPDATE SET
+            name = COALESCE(excluded.name, customers.name),
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (phone, name),
+    )
+    row = conn.execute("SELECT id FROM customers WHERE phone = ?", (phone,)).fetchone()
+    return row["id"]
+
+
+def message_exists(conn: sqlite3.Connection, message_id: str) -> bool:
+    return conn.execute("SELECT 1 FROM messages WHERE id = ?", (message_id,)).fetchone() is not None
+
+
+def insert_message(conn, message_id, customer_id, direction, body, kind=None, raw=None) -> None:
+    conn.execute(
+        "INSERT OR IGNORE INTO messages (id, customer_id, direction, body, kind, raw) VALUES (?, ?, ?, ?, ?, ?)",
+        (message_id, customer_id, direction, body, kind, raw),
+    )
+
+
+def has_outgoing_greeting(conn: sqlite3.Connection, customer_id: int) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM messages WHERE customer_id = ? AND direction = 'out' LIMIT 1",
+        (customer_id,),
+    ).fetchone() is not None
+
+
+def create_offer_draft(conn, owner_customer_id: int, details: str) -> int:
+    cur = conn.execute(
+        "INSERT INTO offers (owner_customer_id, details) VALUES (?, ?)",
+        (owner_customer_id, details),
+    )
+    conn.execute(
+        "UPDATE customers SET interest = 'seller', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (owner_customer_id,),
+    )
+    return cur.lastrowid
