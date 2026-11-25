@@ -1,23 +1,25 @@
-"""إعدادات التطبيق تُقرأ من متغيرات البيئة."""
+"""إعدادات التطبيق تُقرأ من ملف .env أو من متغيرات البيئة."""
 import os
 from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
 class Settings:
-    verify_token: str        # رمز التحقق الذي تدخله في إعدادات Webhook في Meta
-    app_secret: str          # App Secret من تطبيق Meta، يُستخدم للتحقق من توقيع الطلبات
-    whatsapp_token: str      # رمز الوصول الدائم لـ WhatsApp Cloud API
-    phone_number_id: str     # معرّف رقم WhatsApp Business
-    manager_phone: str       # رقم المدير بصيغة دولية بدون +
-    db_path: str             # مسار ملف SQLite
-    graph_version: str       # إصدار Graph API
-    port: int                # منفذ الخادم
-    auto_reply: bool         # هل يرد الوكيل تلقائياً على الزبناء الجدد
+    verify_token: str
+    app_secret: str
+    whatsapp_token: str
+    phone_number_id: str
+    manager_phone: str
+    db_path: str
+    graph_version: str
+    port: int
+    auto_reply: bool
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-haiku-5-5"
 
 
 def load_dotenv(path: str = ".env") -> None:
-    """يقرأ ملف .env ويضبط المتغيرات غير المضبوطة مسبقاً في البيئة (بدون استبدال القيم الموجودة)."""
+    """يقرأ ملف .env ويضبط المتغيرات غير المضبوطة مسبقاً فقط."""
     if not os.path.isfile(path):
         return
     with open(path, encoding="utf-8") as f:
@@ -42,4 +44,6 @@ def load_settings() -> Settings:
         graph_version=os.environ.get("GRAPH_VERSION", "v21.0"),
         port=int(os.environ.get("PORT", "8000")),
         auto_reply=os.environ.get("AUTO_REPLY", "true").lower() == "true",
+        anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
+        anthropic_model=os.environ.get("ANTHROPIC_MODEL", "claude-haiku-5-5"),
     )

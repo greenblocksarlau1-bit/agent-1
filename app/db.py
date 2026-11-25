@@ -99,3 +99,29 @@ def create_offer_draft(conn, owner_customer_id: int, details: str) -> int:
         (owner_customer_id,),
     )
     return cur.lastrowid
+
+
+def save_offer_draft(conn: sqlite3.Connection, owner_customer_id: int, offer: dict, ready: bool) -> int:
+    """يحدّث مسودة العرض الأخيرة للزبون أو ينشئ واحدة جديدة، ويرفعها للمدير عند الاكتمال."""
+    fields = ("title", "category", "location", "price", "details", "availability")
+    values = {f: offer.get(f) for f in fields}
+    row = conn.execute(
+        "SELECT id FROM offers WHERE owner_customer_id = ? AND status = 'draft' ORDER BY id DESC LIMIT 1",
+        (owner_customer_id,),
+    ).fetchone()
+    if row:
+        offer_id = row["id"]
+        conn.execute(
+            "UPDATE offers SET " + ", ".join(f"{f} = COALESCE(?, {f})" for f in fields) + " WHERE id = ?",
+            (*[values[f] for f in fields], offer_id),
+        )
+    else:
+        cur = conn.execute(
+            "INSERT INTO offers (owner_customer_id, title, category, location, price, details, availability) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (owner_customer_id, *[values[f] for f in fields]),
+        )
+        offer_id = cur.lastrowid
+    if ready:
+        conn.execute("UPDATE offers SET status = 'pending_approval' WHERE id = ?", (offer_id,))
+    return offer_id
