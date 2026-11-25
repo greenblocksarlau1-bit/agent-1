@@ -97,6 +97,23 @@ class AgentTests(unittest.TestCase):
         self.assertIn("أرض", row["details"])
 
 
+class DotenvTests(unittest.TestCase):
+    def test_dotenv_loaded_without_overriding(self):
+        from app.config import load_dotenv
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, ".env")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("# تعليق\nWASSATA_TEST_NEW=abc\nWASSATA_TEST_KEEP=from-file\n")
+            os.environ["WASSATA_TEST_KEEP"] = "from-env"
+            try:
+                load_dotenv(path)
+                self.assertEqual(os.environ["WASSATA_TEST_NEW"], "abc")
+                self.assertEqual(os.environ["WASSATA_TEST_KEEP"], "from-env")
+            finally:
+                os.environ.pop("WASSATA_TEST_NEW", None)
+                os.environ.pop("WASSATA_TEST_KEEP", None)
+
+
 class ServerTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)

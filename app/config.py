@@ -16,7 +16,22 @@ class Settings:
     auto_reply: bool         # هل يرد الوكيل تلقائياً على الزبناء الجدد
 
 
+def load_dotenv(path: str = ".env") -> None:
+    """يقرأ ملف .env ويضبط المتغيرات غير المضبوطة مسبقاً في البيئة (بدون استبدال القيم الموجودة)."""
+    if not os.path.isfile(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        for raw in f:
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key, value = key.strip(), value.strip().strip('"').strip("'")
+            os.environ.setdefault(key, value)
+
+
 def load_settings() -> Settings:
+    load_dotenv()
     return Settings(
         verify_token=os.environ.get("WHATSAPP_VERIFY_TOKEN", ""),
         app_secret=os.environ.get("META_APP_SECRET", ""),
