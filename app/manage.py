@@ -5,6 +5,8 @@ Usage:
   py -m app.manage publish ID
   py -m app.manage reject ID
   py -m app.manage reservations
+  py -m app.manage poster ID
+  py -m app.manage report
 """
 import sys
 
@@ -30,6 +32,12 @@ def main(argv: list[str]) -> int:
     elif cmd == "reservations":
         for r in db.reservations(conn):
             print(f"{r['phone']} | {r['name']} | offer #{r['offer_id']} {r['title']}")
+    elif cmd == "poster" and len(argv) == 2 and argv[1].isdigit():
+        from .poster import write_poster
+        print(write_poster(conn, int(argv[1])))
+    elif cmd == "report":
+        from .report import build_report
+        print(build_report(conn))
     else:
         print(__doc__)
         return 1

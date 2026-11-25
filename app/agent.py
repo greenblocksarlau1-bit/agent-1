@@ -2,7 +2,7 @@
 import sqlite3
 import uuid
 
-from . import db
+from . import db, manager
 from .config import Settings
 from .conversation import apply_result, build_system_prompt, history_for_model, parse_reply
 from .llm import call_claude
@@ -50,6 +50,10 @@ def handle_incoming(conn: sqlite3.Connection, settings: Settings, msg: dict, llm
 
     phone = msg["from"]
     body = msg.get("body", "")
+    if manager.is_manager(settings, phone):
+        send_text(settings, phone, manager.handle_command(conn, body))
+        conn.commit()
+        return
     customer_id = db.upsert_customer(conn, phone, msg.get("name"))
     db.insert_message(conn, msg["id"], customer_id, "in", body, classify(body), msg.get("raw"))
     conn.commit()
@@ -60,7 +64,10 @@ def handle_incoming(conn: sqlite3.Connection, settings: Settings, msg: dict, llm
 
     if llm is not None:
         result = parse_reply(llm(history_for_model(conn, customer_id), build_system_prompt(db.list_catalog(conn))))
+        before = db.pending_count(conn, customer_id)
         apply_result(conn, customer_id, result)
+        if db.pending_count(conn, customer_id) > before:
+            manager.notify_pending(conn, settings, customer_id)
         send_and_store(conn, settings, customer_id, phone, result["reply"])
     else:
         if classify(body) == "offer" and body:

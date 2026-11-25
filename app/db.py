@@ -151,7 +151,7 @@ def save_offer_draft(conn: sqlite3.Connection, owner_customer_id: int, offer: di
     specs = offer.get("specs")
     specs_text = json.dumps(specs, ensure_ascii=False) if isinstance(specs, dict) and specs else None
     row = conn.execute(
-        "SELECT id FROM offers WHERE owner_customer_id = ? AND status = 'draft' ORDER BY id DESC LIMIT 1",
+        "SELECT id FROM offers WHERE owner_customer_id = ? AND status IN ('draft', 'pending_approval') ORDER BY id DESC LIMIT 1",
         (owner_customer_id,),
     ).fetchone()
     if row:
@@ -171,3 +171,9 @@ def save_offer_draft(conn: sqlite3.Connection, owner_customer_id: int, offer: di
     if ready:
         conn.execute("UPDATE offers SET status = 'pending_approval' WHERE id = ?", (offer_id,))
     return offer_id
+
+
+def pending_count(conn: sqlite3.Connection, customer_id: int) -> int:
+    return conn.execute(
+        "SELECT COUNT(*) FROM offers WHERE owner_customer_id = ? AND status = 'pending_approval'", (customer_id,)
+    ).fetchone()[0]
