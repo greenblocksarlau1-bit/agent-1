@@ -51,7 +51,7 @@ def handle_incoming(conn: sqlite3.Connection, settings: Settings, msg: dict, llm
     phone = msg["from"]
     body = msg.get("body", "") or (f"[{msg['media_kind']} received]" if msg.get("media_id") else "")
     if manager.is_manager(settings, phone):
-        send_text(settings, phone, manager.handle_command(conn, body))
+        send_text(settings, phone, manager.handle_command(conn, body, settings))
         conn.commit()
         return
     customer_id = db.upsert_customer(conn, phone, msg.get("name"))

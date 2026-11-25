@@ -16,6 +16,8 @@ class Settings:
     auto_reply: bool
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-haiku-5-5"
+    github_dispatch_token: str = ""
+    automation_repo: str = "outmantheone11/social-to-blogger-automation"
 
 
 def load_dotenv(path: str = ".env") -> None:
@@ -46,4 +48,6 @@ def load_settings() -> Settings:
         auto_reply=os.environ.get("AUTO_REPLY", "true").lower() == "true",
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
         anthropic_model=os.environ.get("ANTHROPIC_MODEL", "claude-haiku-5-5"),
+        github_dispatch_token=os.environ.get("GITHUB_DISPATCH_TOKEN", ""),
+        automation_repo=os.environ.get("AUTOMATION_REPO", "outmantheone11/social-to-blogger-automation"),
     )

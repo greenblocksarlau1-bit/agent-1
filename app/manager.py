@@ -16,7 +16,7 @@ def is_manager(settings: Settings, phone: str) -> bool:
     return bool(settings.manager_phone) and _digits(phone) == _digits(settings.manager_phone)
 
 
-def handle_command(conn, text: str) -> str:
+def handle_command(conn, text: str, settings: Settings | None = None) -> str:
     from .report import build_report
 
     parts = text.strip().split()
@@ -33,6 +33,11 @@ def handle_command(conn, text: str) -> str:
         if not db.set_offer_status(conn, int(parts[1]), status):
             return f"offer {parts[1]} not found"
         ranking.refresh_scores(conn)
+        if status == "published" and settings is not None:
+            from . import publisher
+            row = conn.execute("SELECT * FROM offers WHERE id = ?", (int(parts[1]),)).fetchone()
+            publisher.dispatch_offer(settings, row)
+            return f"offer {parts[1]} -> published and sent to the publishing workflow"
         return f"offer {parts[1]} -> {status}"
     if cmd == "reservations":
         rows = db.reservations(conn)
