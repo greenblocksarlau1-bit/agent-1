@@ -112,5 +112,28 @@ class ConversationTests(unittest.TestCase):
         self.assertEqual(row["relation"], "reservation")
 
 
+    def test_specs_and_buyer_profile_saved(self):
+        def fake_llm(messages, system=None):
+            return json.dumps({"reply": "ok", "customer_name": None, "interest": "seller",
+                               "offer": {"title": "أرض", "category": "land", "location": "أزيلال",
+                                         "price": None, "details": None, "availability": None,
+                                         "specs": {"legal_status": "titre foncier", "road_access": "piste"}},
+                               "ready_for_manager": False, "missing": ["price"]})
+
+        handle_incoming(self.conn, self.settings, msg("s1", "أرض بالتوثيق في أزيلال"), llm=fake_llm)
+        row = self.conn.execute("SELECT specs FROM offers").fetchone()
+        self.assertIn("titre foncier", row["specs"])
+
+        def buyer_llm(messages, system=None):
+            return json.dumps({"reply": "ok", "customer_name": None, "interest": "buyer", "offer": None,
+                               "offer_id": None, "reservation_requested": False,
+                               "buyer_profile": {"financing": "crédit bancaire", "timeline": "3 mois"},
+                               "missing": [], "ready_for_manager": False})
+
+        handle_incoming(self.conn, self.settings, msg("b2", "بغيت نشري دار بالقرض"), llm=buyer_llm)
+        notes = self.conn.execute("SELECT notes FROM customers").fetchone()["notes"]
+        self.assertIn("crédit bancaire", notes)
+
+
 if __name__ == "__main__":
     unittest.main()

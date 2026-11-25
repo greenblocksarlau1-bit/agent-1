@@ -29,15 +29,35 @@ Buyer requirements (customers who ask about a property or want to book one):
 - To book: confirm which offer it is, collect the customer's name and a preferred visit or contact time, then summarize the request. Set "reservation_requested" to true only once the offer and the customer's name are confirmed. Say the manager will confirm the booking; never promise it.
 - Near the end of the conversation, once the buyer understands the offer and the booking, explain the platform commission: 1 percent of the final sale amount, due only after the deal is concluded. Mention it once. Never ask for any payment now.
 
+Professional checklist for sellers (ask two questions at a time, in a natural order, never a long form). Store the answers in offer.specs:
+- legal_status: titre foncier, melkia, or other, and whether the property is registered at the Conservation Foncière.
+- encumbrances: any mortgage (hypothèque), seizure (saisie), dispute, or pending succession (indivision).
+- zoning: for land, the usage allowed (agricole, urbanisable, zone touristique, etc.), and any planned road or expropriation nearby.
+- road_access: paved road, track (piste), or no access, and the distance to the main road.
+- utilities: water source (forage, réseau, puits) and electricity (réseau ou solaire).
+- distance_to_city: approximate distance to the nearest city centre.
+- building: for property, built area, number of rooms, and whether a building permit exists.
+- sale_or_rent: whether the seller wants to sell or rent.
+Never give legal conclusions. Say that a notary will verify the title before the deal.
+
+Buyer profile (store in buyer_profile when the buyer shares it):
+- purpose: residence, investment, or farm project.
+- financing: cash or bank loan (crédit bancaire).
+- timeline: when the buyer wants to close.
+- budget_range: approximate budget.
+- preferred_areas: places the buyer prefers.
+- visit_availability: days or times for a visit.
+
 Return ONLY a JSON object with this shape, and no other text:
 {"reply": "message to send to the customer",
  "customer_name": string or null,
  "interest": "seller" | "buyer" | "info" | "unknown",
- "offer": {"title": string|null, "category": string|null, "location": string|null, "price": string|null, "details": string|null, "availability": string|null} or null,
+ "offer": {"title": string|null, "category": string|null, "location": string|null, "price": string|null, "details": string|null, "availability": string|null, "specs": object or null} or null,
  "missing": list of strings,
  "ready_for_manager": true or false,
  "offer_id": integer or null,
- "reservation_requested": true or false}"""
+ "reservation_requested": true or false,
+ "buyer_profile": object or null}"""
 
 
 def parse_reply(text: str) -> dict:
@@ -85,6 +105,10 @@ def apply_result(conn: sqlite3.Connection, customer_id: int, result: dict) -> No
     offer = result.get("offer")
     if isinstance(offer, dict) and any(offer.values()):
         db.save_offer_draft(conn, customer_id, offer, bool(result.get("ready_for_manager")))
+    profile = result.get("buyer_profile")
+    if isinstance(profile, dict) and profile:
+        conn.execute("UPDATE customers SET notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                     (json.dumps(profile, ensure_ascii=False), customer_id))
     offer_id = result.get("offer_id")
     if isinstance(offer_id, int):
         relation = "reservation" if result.get("reservation_requested") else "interested"
@@ -98,7 +122,7 @@ def build_system_prompt(catalog) -> str:
     else:
         lines = [
             f"#{r['id']} | {r['title']} | {r['category']} | {r['location']} | price: {r['price']} | "
-            f"{r['details']} | availability: {r['availability']}"
+            f"{r['details']} | availability: {r['availability']} | specs: {r['specs'] or '-'}"
             for r in catalog
         ]
         listing = "Published offers (the ONLY properties you may describe):\n" + "\n".join(lines)

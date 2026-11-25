@@ -1,4 +1,5 @@
 """طبقة قاعدة البيانات. SQLite من مكتبة Python القياسية، وسهلة الانتقال إلى PostgreSQL لاحقاً."""
+import json
 import sqlite3
 
 SCHEMA = """
@@ -33,6 +34,7 @@ CREATE TABLE IF NOT EXISTS offers (
     status            TEXT NOT NULL DEFAULT 'draft',  -- draft | pending_approval | published | sold
     efficiency_score  REAL DEFAULT 0,             -- للترتيب لاحقاً
     availability      TEXT DEFAULT 'available',
+    specs             TEXT,                       -- JSON: legal status, zoning, access, utilities...
     created_at        TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -54,6 +56,9 @@ def connect(path: str) -> sqlite3.Connection:
 
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(offers)")}
+    if "specs" not in cols:  # قواعد بيانات قديمة
+        conn.execute("ALTER TABLE offers ADD COLUMN specs TEXT")
     conn.commit()
 
 
@@ -101,36 +106,12 @@ def create_offer_draft(conn, owner_customer_id: int, details: str) -> int:
     return cur.lastrowid
 
 
-def save_offer_draft(conn: sqlite3.Connection, owner_customer_id: int, offer: dict, ready: bool) -> int:
-    """يحدّث مسودة العرض الأخيرة للزبون أو ينشئ واحدة جديدة، ويرفعها للمدير عند الاكتمال."""
-    fields = ("title", "category", "location", "price", "details", "availability")
-    values = {f: offer.get(f) for f in fields}
-    row = conn.execute(
-        "SELECT id FROM offers WHERE owner_customer_id = ? AND status = 'draft' ORDER BY id DESC LIMIT 1",
-        (owner_customer_id,),
-    ).fetchone()
-    if row:
-        offer_id = row["id"]
-        conn.execute(
-            "UPDATE offers SET " + ", ".join(f"{f} = COALESCE(?, {f})" for f in fields) + " WHERE id = ?",
-            (*[values[f] for f in fields], offer_id),
-        )
-    else:
-        cur = conn.execute(
-            "INSERT INTO offers (owner_customer_id, title, category, location, price, details, availability) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (owner_customer_id, *[values[f] for f in fields]),
-        )
-        offer_id = cur.lastrowid
-    if ready:
-        conn.execute("UPDATE offers SET status = 'pending_approval' WHERE id = ?", (offer_id,))
-    return offer_id
 
 
 def list_catalog(conn: sqlite3.Connection, limit: int = 30) -> list[sqlite3.Row]:
     """العروض المنشورة فقط، وهي الوحيدة التي يحق للوكيل وصفها للمشترين."""
     return conn.execute(
-        "SELECT id, title, category, location, price, details, availability FROM offers "
+        "SELECT id, title, category, location, price, details, availability, specs FROM offers "
         "WHERE status = 'published' ORDER BY efficiency_score DESC, id DESC LIMIT ?",
         (limit,),
     ).fetchall()
@@ -161,3 +142,32 @@ def reservations(conn: sqlite3.Connection) -> list[sqlite3.Row]:
         "JOIN customers c ON c.id = co.customer_id JOIN offers o ON o.id = co.offer_id "
         "WHERE co.relation = 'reservation' ORDER BY co.rowid DESC"
     ).fetchall()
+
+
+def save_offer_draft(conn: sqlite3.Connection, owner_customer_id: int, offer: dict, ready: bool) -> int:
+    """يحدّث مسودة العرض الأخيرة للزبون أو ينشئ واحدة جديدة، ويرفعها للمدير عند الاكتمال."""
+    fields = ("title", "category", "location", "price", "details", "availability")
+    values = {f: offer.get(f) for f in fields}
+    specs = offer.get("specs")
+    specs_text = json.dumps(specs, ensure_ascii=False) if isinstance(specs, dict) and specs else None
+    row = conn.execute(
+        "SELECT id FROM offers WHERE owner_customer_id = ? AND status = 'draft' ORDER BY id DESC LIMIT 1",
+        (owner_customer_id,),
+    ).fetchone()
+    if row:
+        offer_id = row["id"]
+        conn.execute(
+            "UPDATE offers SET " + ", ".join(f"{f} = COALESCE(?, {f})" for f in fields)
+            + ", specs = COALESCE(?, specs) WHERE id = ?",
+            (*[values[f] for f in fields], specs_text, offer_id),
+        )
+    else:
+        cur = conn.execute(
+            "INSERT INTO offers (owner_customer_id, title, category, location, price, details, availability, specs) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (owner_customer_id, *[values[f] for f in fields], specs_text),
+        )
+        offer_id = cur.lastrowid
+    if ready:
+        conn.execute("UPDATE offers SET status = 'pending_approval' WHERE id = ?", (offer_id,))
+    return offer_id
