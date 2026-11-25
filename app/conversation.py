@@ -23,13 +23,21 @@ e. Publication consent: ask the seller's explicit approval to publish an adverti
 
 Set "ready_for_manager" to true ONLY when all of a, b, c, d and e are collected. Otherwise set it to false and list the still-missing items in "missing".
 
+Buyer requirements (customers who ask about a property or want to book one):
+- Answer questions about a property ONLY from the "Published offers" list below. Never invent details. If the answer is not in the list, say the manager will confirm.
+- Set "offer_id" to the number of the offer the customer is asking about (the # number in the list), or null.
+- To book: confirm which offer it is, collect the customer's name and a preferred visit or contact time, then summarize the request. Set "reservation_requested" to true only once the offer and the customer's name are confirmed. Say the manager will confirm the booking; never promise it.
+- Near the end of the conversation, once the buyer understands the offer and the booking, explain the platform commission: 1 percent of the final sale amount, due only after the deal is concluded. Mention it once. Never ask for any payment now.
+
 Return ONLY a JSON object with this shape, and no other text:
 {"reply": "message to send to the customer",
  "customer_name": string or null,
  "interest": "seller" | "buyer" | "info" | "unknown",
  "offer": {"title": string|null, "category": string|null, "location": string|null, "price": string|null, "details": string|null, "availability": string|null} or null,
  "missing": list of strings,
- "ready_for_manager": true or false}"""
+ "ready_for_manager": true or false,
+ "offer_id": integer or null,
+ "reservation_requested": true or false}"""
 
 
 def parse_reply(text: str) -> dict:
@@ -77,3 +85,21 @@ def apply_result(conn: sqlite3.Connection, customer_id: int, result: dict) -> No
     offer = result.get("offer")
     if isinstance(offer, dict) and any(offer.values()):
         db.save_offer_draft(conn, customer_id, offer, bool(result.get("ready_for_manager")))
+    offer_id = result.get("offer_id")
+    if isinstance(offer_id, int):
+        relation = "reservation" if result.get("reservation_requested") else "interested"
+        db.link_customer_offer(conn, customer_id, offer_id, relation)
+
+
+def build_system_prompt(catalog) -> str:
+    """يضيف قائمة العروض المنشورة إلى التعليمات حتى يجيب الوكيل من بيانات حقيقية فقط."""
+    if not catalog:
+        listing = "Published offers: none available right now. If asked about a property, say the manager will get back to the customer."
+    else:
+        lines = [
+            f"#{r['id']} | {r['title']} | {r['category']} | {r['location']} | price: {r['price']} | "
+            f"{r['details']} | availability: {r['availability']}"
+            for r in catalog
+        ]
+        listing = "Published offers (the ONLY properties you may describe):\n" + "\n".join(lines)
+    return SYSTEM_PROMPT + "\n\n" + listing

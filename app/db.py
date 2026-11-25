@@ -125,3 +125,39 @@ def save_offer_draft(conn: sqlite3.Connection, owner_customer_id: int, offer: di
     if ready:
         conn.execute("UPDATE offers SET status = 'pending_approval' WHERE id = ?", (offer_id,))
     return offer_id
+
+
+def list_catalog(conn: sqlite3.Connection, limit: int = 30) -> list[sqlite3.Row]:
+    """العروض المنشورة فقط، وهي الوحيدة التي يحق للوكيل وصفها للمشترين."""
+    return conn.execute(
+        "SELECT id, title, category, location, price, details, availability FROM offers "
+        "WHERE status = 'published' ORDER BY efficiency_score DESC, id DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+
+
+def link_customer_offer(conn: sqlite3.Connection, customer_id: int, offer_id: int, relation: str) -> None:
+    conn.execute(
+        "INSERT OR IGNORE INTO customer_offers (customer_id, offer_id, relation) VALUES (?, ?, ?)",
+        (customer_id, offer_id, relation),
+    )
+
+
+def set_offer_status(conn: sqlite3.Connection, offer_id: int, status: str) -> int:
+    cur = conn.execute("UPDATE offers SET status = ? WHERE id = ?", (status, offer_id))
+    conn.commit()
+    return cur.rowcount
+
+
+def pending_offers(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT id, title, category, location, price, details FROM offers WHERE status = 'pending_approval' ORDER BY id"
+    ).fetchall()
+
+
+def reservations(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT c.phone, c.name, o.id AS offer_id, o.title FROM customer_offers co "
+        "JOIN customers c ON c.id = co.customer_id JOIN offers o ON o.id = co.offer_id "
+        "WHERE co.relation = 'reservation' ORDER BY co.rowid DESC"
+    ).fetchall()

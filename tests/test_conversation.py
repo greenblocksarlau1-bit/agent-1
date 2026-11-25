@@ -49,7 +49,7 @@ class ConversationTests(unittest.TestCase):
     def test_llm_reply_extracts_seller_offer_and_marks_ready(self):
         captured = {}
 
-        def fake_llm(messages):
+        def fake_llm(messages, system=None):
             captured["messages"] = messages
             return json.dumps({
                 "reply": "شكراً، سيراجع المدير العرض.",
@@ -72,13 +72,13 @@ class ConversationTests(unittest.TestCase):
         self.assertIn("المدير", out["body"])
 
     def test_second_message_updates_same_draft(self):
-        def llm_one(messages):
+        def llm_one(messages, system=None):
             return json.dumps({"reply": "ok", "interest": "seller",
                                "offer": {"title": "أرض", "category": "land", "location": None,
                                          "price": None, "details": None, "availability": None},
                                "ready_for_manager": False})
 
-        def llm_two(messages):
+        def llm_two(messages, system=None):
             return json.dumps({"reply": "ok", "interest": "seller",
                                "offer": {"title": None, "category": None, "location": "أزيلال",
                                          "price": "500000", "details": None, "availability": None},
@@ -89,6 +89,27 @@ class ConversationTests(unittest.TestCase):
         rows = self.conn.execute("SELECT title, location, price FROM offers").fetchall()
         self.assertEqual(len(rows), 1)
         self.assertEqual((rows[0]["title"], rows[0]["location"], rows[0]["price"]), ("أرض", "أزيلال", "500000"))
+
+
+    def test_buyer_reservation_links_published_offer(self):
+        self.conn.execute(
+            "INSERT INTO offers (title, category, location, price, status) VALUES (?, ?, ?, ?, 'published')",
+            ("فيلا", "property", "مراكش", "3000000"),
+        )
+        self.conn.commit()
+        seen = {}
+
+        def fake_llm(messages, system=None):
+            seen["system"] = system
+            return json.dumps({"reply": "ok", "customer_name": "Sara", "interest": "buyer",
+                               "offer": None, "offer_id": 1, "reservation_requested": True,
+                               "missing": [], "ready_for_manager": False})
+
+        handle_incoming(self.conn, self.settings, msg("b1", "بغيت نحجز الفيلا"), llm=fake_llm)
+        self.assertIn("فيلا", seen["system"])
+        self.assertIn("ONLY properties", seen["system"])
+        row = self.conn.execute("SELECT relation FROM customer_offers").fetchone()
+        self.assertEqual(row["relation"], "reservation")
 
 
 if __name__ == "__main__":

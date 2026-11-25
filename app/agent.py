@@ -4,7 +4,7 @@ import uuid
 
 from . import db
 from .config import Settings
-from .conversation import SYSTEM_PROMPT, apply_result, history_for_model, parse_reply
+from .conversation import apply_result, build_system_prompt, history_for_model, parse_reply
 from .llm import call_claude
 from .whatsapp import send_text
 
@@ -55,11 +55,11 @@ def handle_incoming(conn: sqlite3.Connection, settings: Settings, msg: dict, llm
     conn.commit()
 
     if llm is None and settings.anthropic_api_key:
-        def llm(messages):
-            return call_claude(settings.anthropic_api_key, settings.anthropic_model, SYSTEM_PROMPT, messages)
+        def llm(messages, system):
+            return call_claude(settings.anthropic_api_key, settings.anthropic_model, system, messages)
 
     if llm is not None:
-        result = parse_reply(llm(history_for_model(conn, customer_id)))
+        result = parse_reply(llm(history_for_model(conn, customer_id), build_system_prompt(db.list_catalog(conn))))
         apply_result(conn, customer_id, result)
         send_and_store(conn, settings, customer_id, phone, result["reply"])
     else:
