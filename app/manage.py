@@ -7,6 +7,7 @@ Usage:
   py -m app.manage reservations
   py -m app.manage poster ID
   py -m app.manage report
+  py -m app.manage media [PHONE]
 """
 import sys
 
@@ -38,6 +39,10 @@ def main(argv: list[str]) -> int:
     elif cmd == "report":
         from .report import build_report
         print(build_report(conn))
+    elif cmd == "media":
+        digits = "".join(ch for ch in argv[1] if ch.isdigit()) if len(argv) > 1 else None
+        for r in db.list_media(conn, digits):
+            print(f"{r['created_at']} | {r['phone']} {r['name'] or ''} | offer {r['offer_id'] or '-'} | {r['label']} | {r['path']}")
     else:
         print(__doc__)
         return 1

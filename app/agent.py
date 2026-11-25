@@ -2,11 +2,11 @@
 import sqlite3
 import uuid
 
-from . import db, manager
+from . import db, manager, media
 from .config import Settings
 from .conversation import apply_result, build_system_prompt, history_for_model, parse_reply
 from .llm import call_claude
-from .whatsapp import send_text
+from .whatsapp import download_media, send_text
 
 OFFER_KEYWORDS = [
     "عرض", "للبيع", "نبيع", "عندي", "ضيعة", "أرض", "ارض", "شقة", "فيلا", "محل",
@@ -41,7 +41,7 @@ def send_and_store(conn: sqlite3.Connection, settings: Settings, customer_id: in
     db.insert_message(conn, out_id, customer_id, "out", text)
 
 
-def handle_incoming(conn: sqlite3.Connection, settings: Settings, msg: dict, llm=None) -> None:
+def handle_incoming(conn: sqlite3.Connection, settings: Settings, msg: dict, llm=None, downloader=None) -> None:
     """يعالج رسالة واردة. llm اختياري لتمرير نموذج وهمي في الاختبارات."""
     if not msg.get("id") or not msg.get("from"):
         return
@@ -49,7 +49,7 @@ def handle_incoming(conn: sqlite3.Connection, settings: Settings, msg: dict, llm
         return
 
     phone = msg["from"]
-    body = msg.get("body", "")
+    body = msg.get("body", "") or (f"[{msg['media_kind']} received]" if msg.get("media_id") else "")
     if manager.is_manager(settings, phone):
         send_text(settings, phone, manager.handle_command(conn, body))
         conn.commit()
@@ -57,6 +57,11 @@ def handle_incoming(conn: sqlite3.Connection, settings: Settings, msg: dict, llm
     customer_id = db.upsert_customer(conn, phone, msg.get("name"))
     db.insert_message(conn, msg["id"], customer_id, "in", body, classify(body), msg.get("raw"))
     conn.commit()
+    if msg.get("media_id"):
+        try:
+            media.save_media(conn, settings, customer_id, phone, msg, downloader or download_media)
+        except Exception as exc:  # الوسيط لا يوقف الحوار
+            print("media download failed:", exc)
 
     if llm is None and settings.anthropic_api_key:
         def llm(messages, system):
@@ -68,6 +73,7 @@ def handle_incoming(conn: sqlite3.Connection, settings: Settings, msg: dict, llm
         apply_result(conn, customer_id, result)
         if db.pending_count(conn, customer_id) > before:
             manager.notify_pending(conn, settings, customer_id)
+        media.relink(conn, customer_id)
         send_and_store(conn, settings, customer_id, phone, result["reply"])
     else:
         if classify(body) == "offer" and body:

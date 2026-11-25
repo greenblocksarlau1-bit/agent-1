@@ -3,6 +3,18 @@ import json
 import sqlite3
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS media (
+    id           TEXT PRIMARY KEY,                 -- معرّف الوسيط من Meta
+    customer_id  INTEGER REFERENCES customers(id),
+    offer_id     INTEGER REFERENCES offers(id),
+    kind         TEXT,                             -- image | video | document | audio
+    label        TEXT,                             -- photo | video | legal | other
+    mime         TEXT,
+    filename     TEXT,
+    caption      TEXT,
+    path         TEXT,
+    created_at   TEXT DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS customers (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     phone       TEXT UNIQUE NOT NULL,
@@ -177,3 +189,31 @@ def pending_count(conn: sqlite3.Connection, customer_id: int) -> int:
     return conn.execute(
         "SELECT COUNT(*) FROM offers WHERE owner_customer_id = ? AND status = 'pending_approval'", (customer_id,)
     ).fetchone()[0]
+
+
+def latest_open_offer(conn: sqlite3.Connection, customer_id: int):
+    row = conn.execute(
+        "SELECT id FROM offers WHERE owner_customer_id = ? AND status IN ('draft', 'pending_approval') "
+        "ORDER BY id DESC LIMIT 1",
+        (customer_id,),
+    ).fetchone()
+    return row["id"] if row else None
+
+
+def insert_media(conn, media_id, customer_id, offer_id, kind, label, mime, filename, caption, path) -> None:
+    conn.execute(
+        "INSERT OR IGNORE INTO media (id, customer_id, offer_id, kind, label, mime, filename, caption, path) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (media_id, customer_id, offer_id, kind, label, mime, filename, caption, path),
+    )
+    conn.commit()
+
+
+def list_media(conn: sqlite3.Connection, phone_digits: str | None = None) -> list[sqlite3.Row]:
+    sql = ("SELECT m.created_at, c.phone, c.name, m.offer_id, m.label, m.kind, m.path FROM media m "
+           "JOIN customers c ON c.id = m.customer_id")
+    params: tuple = ()
+    if phone_digits:
+        sql += " WHERE c.phone = ?"
+        params = (phone_digits,)
+    return conn.execute(sql + " ORDER BY m.created_at DESC, m.rowid DESC LIMIT 200", params).fetchall()
